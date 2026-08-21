@@ -2,7 +2,14 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 
-from app.db.models import ArenaReview, ArenaSubmission, InterviewSession, Turn
+from app.db.models import (
+    ArenaReview,
+    ArenaSubmission,
+    InterviewSession,
+    MockSession,
+    MockTurn,
+    Turn,
+)
 from app.db.session import async_session
 
 
@@ -128,6 +135,114 @@ async def save_arena_submission(
             ]
             rev.due_at = datetime.now(timezone.utc) + timedelta(days=rev.interval_days)
         await db.commit()
+
+
+async def create_mock_session(
+    session_id: str, problem_id: str, problem_title: str, language: str
+) -> None:
+    async with async_session() as db:
+        if await db.get(MockSession, session_id):
+            return
+        db.add(
+            MockSession(
+                id=session_id,
+                problem_id=problem_id,
+                problem_title=problem_title,
+                language=language,
+            )
+        )
+        await db.commit()
+
+
+async def add_mock_turn(
+    session_id: str,
+    idx: int,
+    role: str,
+    text: str,
+    stage: str | None = None,
+    move: str | None = None,
+) -> None:
+    async with async_session() as db:
+        db.add(
+            MockTurn(session_id=session_id, idx=idx, role=role, text=text, stage=stage, move=move)
+        )
+        await db.commit()
+
+
+async def update_mock_code(session_id: str, language: str, code: str | None) -> None:
+    async with async_session() as db:
+        row = await db.get(MockSession, session_id)
+        if row:
+            row.language = language
+            row.code = code
+            await db.commit()
+
+
+async def save_mock_report(session_id: str, report: dict) -> None:
+    async with async_session() as db:
+        row = await db.get(MockSession, session_id)
+        if row:
+            row.report = report
+            row.status = "ended"
+            row.ended_at = datetime.now(timezone.utc)
+            await db.commit()
+
+
+async def list_mock_sessions(limit: int = 50) -> list[dict]:
+    async with async_session() as db:
+        rows = (
+            (
+                await db.execute(
+                    select(MockSession).order_by(MockSession.started_at.desc()).limit(limit)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return [
+            {
+                "id": r.id,
+                "problem_id": r.problem_id,
+                "problem_title": r.problem_title,
+                "language": r.language,
+                "status": r.status,
+                "started_at": r.started_at.isoformat() if r.started_at else None,
+                "ended_at": r.ended_at.isoformat() if r.ended_at else None,
+                "overall_score": (r.report or {}).get("overall_score"),
+            }
+            for r in rows
+        ]
+
+
+async def get_mock_session(session_id: str) -> dict | None:
+    async with async_session() as db:
+        row = await db.get(MockSession, session_id)
+        if not row:
+            return None
+        turns = (
+            (
+                await db.execute(
+                    select(MockTurn).where(MockTurn.session_id == session_id).order_by(MockTurn.idx)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return {
+            "id": row.id,
+            "problem_id": row.problem_id,
+            "problem_title": row.problem_title,
+            "language": row.language,
+            "code": row.code,
+            "status": row.status,
+            "report": row.report,
+            "started_at": row.started_at.isoformat() if row.started_at else None,
+            "ended_at": row.ended_at.isoformat() if row.ended_at else None,
+            "turns": [
+                {"idx": t.idx, "role": t.role, "text": t.text, "stage": t.stage, "move": t.move}
+                for t in turns
+            ],
+        }
 
 
 async def get_arena_progress() -> dict:

@@ -1,0 +1,365 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { Feedback, Message } from "./useInterview";
+
+export interface MockState {
+  stage: string;
+  move: string;
+  note: string;
+}
+
+interface ServerMessage {
+  type: string;
+  session_id?: string;
+  problem_id?: string;
+  problem_title?: string;
+  prompt?: string;
+  stage?: string;
+  move?: string;
+  note?: string;
+  text?: string;
+  data?: string;
+  report?: Feedback;
+}
+
+const WS_BASE = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000";
+
+// Energy-based VAD tuning (client-side, no deps).
+const VAD_THRESHOLD = 0.015; // RMS above this counts as speech
+const SILENCE_MS = 800; // trailing silence that ends an utterance
+const MIN_SPEECH_MS = 350; // ignore blips shorter than this
+
+export function useMockInterview() {
+  const [connected, setConnected] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [state, setState] = useState<MockState | null>(null);
+  const [thinking, setThinking] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [listening, setListening] = useState(false);
+  const [userSpeaking, setUserSpeaking] = useState(false);
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const [evaluating, setEvaluating] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const wsRef = useRef<WebSocket | null>(null);
+  const streamingIdRef = useRef<string | null>(null);
+
+  // AI audio playback (refs so barge-in can stop it from the VAD loop)
+  const audioQueueRef = useRef<string[]>([]);
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const aiSpeakingRef = useRef(false);
+  const stopAudioRef = useRef<() => void>(() => {});
+
+  // continuous listening / VAD
+  const listeningRef = useRef(false);
+  const micStreamRef = useRef<MediaStream | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const rafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const sessionId = crypto.randomUUID();
+    const ws = new WebSocket(`${WS_BASE}/ws/mock/${sessionId}`);
+    wsRef.current = ws;
+
+    function playNext() {
+      const url = audioQueueRef.current.shift();
+      if (!url) {
+        aiSpeakingRef.current = false;
+        setSpeaking(false);
+        return;
+      }
+      aiSpeakingRef.current = true;
+      setSpeaking(true);
+      const audio = new Audio(url);
+      currentAudioRef.current = audio;
+      const done = () => {
+        URL.revokeObjectURL(url);
+        if (currentAudioRef.current === audio) currentAudioRef.current = null;
+        playNext();
+      };
+      audio.onended = done;
+      audio.onerror = done;
+      void audio.play().catch(done);
+    }
+
+    function enqueueAudio(b64: string) {
+      const bin = atob(b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const url = URL.createObjectURL(new Blob([bytes], { type: "audio/mpeg" }));
+      audioQueueRef.current.push(url);
+      if (!aiSpeakingRef.current) playNext();
+    }
+
+    function stopAudio() {
+      audioQueueRef.current.forEach((u) => URL.revokeObjectURL(u));
+      audioQueueRef.current = [];
+      const cur = currentAudioRef.current;
+      if (cur) {
+        cur.pause();
+        currentAudioRef.current = null;
+      }
+      aiSpeakingRef.current = false;
+      setSpeaking(false);
+    }
+    stopAudioRef.current = stopAudio;
+
+    ws.onopen = () => setConnected(true);
+    ws.onclose = () => setConnected(false);
+    ws.onmessage = (ev) => {
+      const msg: ServerMessage = JSON.parse(ev.data);
+      switch (msg.type) {
+        case "state":
+          setState({ stage: msg.stage ?? "", move: msg.move ?? "", note: msg.note ?? "" });
+          setThinking(true);
+          setNotice(null);
+          break;
+        case "assistant_delta": {
+          setThinking(false);
+          const delta = msg.text ?? "";
+          const existing = streamingIdRef.current;
+          if (existing) {
+            setMessages((prev) =>
+              prev.map((m) => (m.id === existing ? { ...m, text: m.text + delta } : m)),
+            );
+          } else {
+            const newId = crypto.randomUUID();
+            streamingIdRef.current = newId;
+            setMessages((prev) => [
+              ...prev,
+              { id: newId, role: "interviewer", text: delta, streaming: true },
+            ]);
+          }
+          break;
+        }
+        case "assistant_done": {
+          const doneId = streamingIdRef.current;
+          streamingIdRef.current = null;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === doneId ? { ...m, text: msg.text ?? m.text, streaming: false } : m,
+            ),
+          );
+          setThinking(false);
+          break;
+        }
+        case "audio_chunk":
+          if (msg.data) enqueueAudio(msg.data);
+          break;
+        case "transcript":
+          setMessages((prev) => [
+            ...prev,
+            { id: crypto.randomUUID(), role: "candidate", text: msg.text ?? "" },
+          ]);
+          setThinking(true);
+          setNotice(null);
+          break;
+        case "interrupted": {
+          const intId = streamingIdRef.current;
+          streamingIdRef.current = null;
+          setMessages((prev) => prev.map((m) => (m.id === intId ? { ...m, streaming: false } : m)));
+          setThinking(false);
+          break;
+        }
+        case "evaluating":
+          setEvaluating(true);
+          break;
+        case "feedback":
+          setEvaluating(false);
+          if (msg.report) setFeedback(msg.report);
+          break;
+        case "feedback_error":
+          setNotice("Couldn't generate the report. Please try again.");
+          setEvaluating(false);
+          break;
+        case "stt_error":
+          setNotice("Transcription failed \u2014 possibly the Whisper rate limit. Try again.");
+          setThinking(false);
+          break;
+        case "stt_empty":
+          setNotice("Didn't catch any speech \u2014 try again.");
+          setThinking(false);
+          break;
+      }
+    };
+
+    return () => {
+      ws.close();
+      stopAudioRef.current();
+      listeningRef.current = false;
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      micStreamRef.current?.getTracks().forEach((t) => t.stop());
+      void audioContextRef.current?.close();
+    };
+  }, []);
+
+  const send = useCallback((obj: Record<string, unknown>) => {
+    wsRef.current?.send(JSON.stringify(obj));
+  }, []);
+
+  const start = useCallback(
+    (problemId: string, language: string) => {
+      send({ type: "start", problem_id: problemId, language });
+      setThinking(true);
+    },
+    [send],
+  );
+
+  const sendUser = useCallback(
+    (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: "candidate", text: trimmed }]);
+      send({ type: "user_message", text: trimmed });
+      setThinking(true);
+    },
+    [send],
+  );
+
+  const sendCode = useCallback(
+    (code: string, language: string, secondsLeft: number | null) => {
+      send({ type: "code", code, language, seconds_left: secondsLeft });
+    },
+    [send],
+  );
+
+  const setVoice = useCallback(
+    (enabled: boolean) => {
+      setVoiceEnabled(enabled);
+      send({ type: "set_voice", enabled });
+    },
+    [send],
+  );
+
+  const sendAudioBlob = useCallback(
+    async (blob: Blob) => {
+      const buf = new Uint8Array(await blob.arrayBuffer());
+      let bin = "";
+      for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
+      send({ type: "audio", data: btoa(bin), filename: "utterance.webm" });
+      setThinking(true);
+    },
+    [send],
+  );
+
+  const stopListening = useCallback(() => {
+    listeningRef.current = false;
+    setListening(false);
+    setUserSpeaking(false);
+    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    rafRef.current = null;
+    micStreamRef.current?.getTracks().forEach((t) => t.stop());
+    void audioContextRef.current?.close();
+    micStreamRef.current = null;
+    audioContextRef.current = null;
+  }, []);
+
+  const startListening = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      micStreamRef.current = stream;
+      const ac = new AudioContext();
+      audioContextRef.current = ac;
+      const source = ac.createMediaStreamSource(stream);
+      const analyser = ac.createAnalyser();
+      analyser.fftSize = 1024;
+      source.connect(analyser);
+      const buf = new Float32Array(analyser.fftSize);
+
+      let speakingNow = false;
+      let silenceStart = 0;
+      let speechStart = 0;
+      let recorder: MediaRecorder | null = null;
+      let chunks: Blob[] = [];
+
+      const tick = () => {
+        if (!listeningRef.current) return;
+        analyser.getFloatTimeDomainData(buf);
+        let sum = 0;
+        for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+        const rms = Math.sqrt(sum / buf.length);
+        const now = performance.now();
+
+        if (rms > VAD_THRESHOLD) {
+          silenceStart = 0;
+          if (!speakingNow) {
+            speakingNow = true;
+            speechStart = now;
+            setUserSpeaking(true);
+            if (aiSpeakingRef.current) {
+              stopAudioRef.current();
+              send({ type: "interrupt" });
+            }
+            chunks = [];
+            recorder = new MediaRecorder(stream);
+            recorder.ondataavailable = (e) => {
+              if (e.data.size > 0) chunks.push(e.data);
+            };
+            recorder.start();
+          }
+        } else if (speakingNow) {
+          if (silenceStart === 0) {
+            silenceStart = now;
+          } else if (now - silenceStart > SILENCE_MS) {
+            speakingNow = false;
+            setUserSpeaking(false);
+            const speechMs = silenceStart - speechStart;
+            const rec = recorder;
+            recorder = null;
+            if (rec && rec.state !== "inactive") {
+              const captured = chunks;
+              rec.onstop = () => {
+                if (speechMs < MIN_SPEECH_MS) return;
+                void sendAudioBlob(new Blob(captured, { type: rec.mimeType || "audio/webm" }));
+              };
+              rec.stop();
+            }
+          }
+        }
+        rafRef.current = requestAnimationFrame(tick);
+      };
+
+      listeningRef.current = true;
+      setListening(true);
+      rafRef.current = requestAnimationFrame(tick);
+    } catch (err) {
+      console.error("microphone error", err);
+    }
+  }, [send, sendAudioBlob]);
+
+  const toggleListening = useCallback(() => {
+    if (listeningRef.current) stopListening();
+    else void startListening();
+  }, [startListening, stopListening]);
+
+  const finish = useCallback(() => {
+    setEvaluating(true);
+    send({ type: "finish" });
+  }, [send]);
+
+  const dismissFeedback = useCallback(() => setFeedback(null), []);
+
+  return {
+    connected,
+    messages,
+    state,
+    thinking,
+    speaking,
+    voiceEnabled,
+    listening,
+    userSpeaking,
+    feedback,
+    evaluating,
+    notice,
+    start,
+    sendUser,
+    sendCode,
+    setVoice,
+    toggleListening,
+    finish,
+    dismissFeedback,
+    dismissNotice: () => setNotice(null),
+  };
+}

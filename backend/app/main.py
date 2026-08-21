@@ -8,6 +8,8 @@ from app.arena import router as arena_router
 from app.config import get_settings
 from app.db import repo
 from app.db.session import init_db
+from app.mock import router as mock_router
+from app.mock_ws import router as mock_ws_router
 from app.ws import router as ws_router
 
 log = logging.getLogger("interview.main")
@@ -36,6 +38,8 @@ app.add_middleware(
 
 app.include_router(ws_router)
 app.include_router(arena_router)
+app.include_router(mock_router)
+app.include_router(mock_ws_router)
 
 
 @app.get("/")

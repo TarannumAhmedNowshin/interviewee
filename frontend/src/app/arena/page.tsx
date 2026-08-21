@@ -47,6 +47,9 @@ export default function ArenaList() {
           <Link href="/" className="hover:text-neutral-100">
             Interview
           </Link>
+          <Link href="/mock" className="hover:text-neutral-100">
+            Mock
+          </Link>
           <Link href="/history" className="hover:text-neutral-100">
             History
           </Link>

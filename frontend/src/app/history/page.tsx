@@ -34,12 +34,20 @@ export default function History() {
           <h1 className="text-lg font-semibold tracking-tight">Past interviews</h1>
           <p className="text-sm text-neutral-500">Your session history</p>
         </div>
-        <Link
-          href="/"
-          className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500"
-        >
-          New interview
-        </Link>
+        <nav className="flex items-center gap-4 text-sm text-neutral-400">
+          <Link href="/arena" className="hover:text-neutral-100">
+            Arena
+          </Link>
+          <Link href="/mock" className="hover:text-neutral-100">
+            Mock
+          </Link>
+          <Link
+            href="/"
+            className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500"
+          >
+            New interview
+          </Link>
+        </nav>
       </header>
 
       <div className="mx-auto max-w-3xl px-6 py-8">

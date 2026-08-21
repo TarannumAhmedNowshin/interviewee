@@ -66,3 +66,40 @@ class ArenaReview(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class MockSession(Base):
+    """A Live Mock Coding Interview (Pillar 3): bare editor + AI interviewer watching."""
+
+    __tablename__ = "mock_sessions"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    problem_id: Mapped[str] = mapped_column(String)
+    problem_title: Mapped[str] = mapped_column(String)
+    language: Mapped[str] = mapped_column(String, default="python")
+    code: Mapped[str | None] = mapped_column(Text, nullable=True)  # final editor contents
+    status: Mapped[str] = mapped_column(String, default="active")  # active | ended
+    report: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    turns: Mapped[list["MockTurn"]] = relationship(
+        back_populates="session", cascade="all, delete-orphan", order_by="MockTurn.idx"
+    )
+
+
+class MockTurn(Base):
+    __tablename__ = "mock_turns"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("mock_sessions.id", ondelete="CASCADE"), index=True
+    )
+    idx: Mapped[int] = mapped_column(Integer)
+    role: Mapped[str] = mapped_column(String)  # user | assistant
+    text: Mapped[str] = mapped_column(Text)
+    stage: Mapped[str | None] = mapped_column(String, nullable=True)
+    move: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    session: Mapped["MockSession"] = relationship(back_populates="turns")

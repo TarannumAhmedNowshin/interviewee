@@ -62,6 +62,9 @@ export default function Home() {
           <Link href="/arena" className="text-neutral-400 transition hover:text-neutral-200">
             Arena
           </Link>
+          <Link href="/mock" className="text-neutral-400 transition hover:text-neutral-200">
+            Mock
+          </Link>
           <Link href="/history" className="text-neutral-400 transition hover:text-neutral-200">
             History
           </Link>
