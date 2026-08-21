@@ -108,6 +108,21 @@ async def stream_reply(session: Session, move: str, stage: str) -> AsyncIterator
 
 async def evaluate(session: Session) -> dict:
     """Grade the whole interview with gpt-5 against a rubric; returns the report dict."""
+    if not any(t["role"] == "user" for t in session.history) and not session.diagram:
+        return {
+            "overall_score": 0,
+            "summary": (
+                "This session ended before you engaged with the interviewer. Start a fresh "
+                "round, ask clarifying questions, talk through your design, and sketch on the "
+                "whiteboard to get a full scored debrief."
+            ),
+            "dimensions": [],
+            "strengths": [],
+            "improvements": [
+                "Begin by clarifying the functional and non-functional requirements.",
+                "Think out loud and sketch your high-level design on the whiteboard.",
+            ],
+        }
     user_content: list[dict] = [
         {
             "type": "text",

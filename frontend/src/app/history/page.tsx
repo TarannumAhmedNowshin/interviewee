@@ -18,12 +18,13 @@ interface SessionRow {
 export default function History() {
   const [rows, setRows] = useState<SessionRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     fetch(`${API_BASE}/sessions`)
       .then((r) => r.json())
       .then((data) => setRows(Array.isArray(data) ? data : []))
-      .catch(() => setRows([]))
+      .catch(() => setError(true))
       .finally(() => setLoading(false));
   }, []);
 
@@ -53,6 +54,8 @@ export default function History() {
       <div className="mx-auto max-w-3xl px-6 py-8">
         {loading ? (
           <p className="text-neutral-500">Loading…</p>
+        ) : error ? (
+          <p className="text-rose-400">Couldn&apos;t reach the server. Is the backend running?</p>
         ) : rows.length === 0 ? (
           <p className="text-neutral-500">No interviews yet. Start one and it&apos;ll show up here.</p>
         ) : (

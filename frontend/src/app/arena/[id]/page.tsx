@@ -34,14 +34,23 @@ export default function ArenaProblem() {
   const [busy, setBusy] = useState<"run" | "submit" | null>(null);
   const [hints, setHints] = useState<string[]>([]);
   const [hintBusy, setHintBusy] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
+    setLoadError(false);
     getProblem(id)
       .then((p) => {
+        if (cancelled) return;
         setProblem(p);
         setSources(p.starter);
       })
-      .catch(() => setProblem(null));
+      .catch(() => {
+        if (!cancelled) setLoadError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
   const source = sources[language] ?? "";
@@ -68,6 +77,20 @@ export default function ArenaProblem() {
     } finally {
       setHintBusy(false);
     }
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-neutral-950 text-neutral-300">
+        <p>Couldn&apos;t load this problem.</p>
+        <Link
+          href="/arena"
+          className="rounded-md border border-neutral-700 px-4 py-2 text-sm hover:border-neutral-500"
+        >
+          ← Back to problems
+        </Link>
+      </div>
+    );
   }
 
   if (!problem) {

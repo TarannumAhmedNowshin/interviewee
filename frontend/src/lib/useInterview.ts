@@ -66,6 +66,11 @@ export function useInterview() {
 
   const wsRef = useRef<WebSocket | null>(null);
   const streamingIdRef = useRef<string | null>(null);
+  const sessionIdRef = useRef<string>("");
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectAttemptsRef = useRef(0);
+  const intentionalCloseRef = useRef(false);
+  const evaluatingRef = useRef(false);
 
   // AI audio playback (refs so barge-in can stop it from the VAD loop)
   const audioQueueRef = useRef<string[]>([]);
@@ -80,9 +85,8 @@ export function useInterview() {
   const rafRef = useRef<number | null>(null);
 
   useEffect(() => {
-    const sessionId = crypto.randomUUID();
-    const ws = new WebSocket(`${WS_BASE}/ws/interview/${sessionId}`);
-    wsRef.current = ws;
+    intentionalCloseRef.current = false;
+    if (!sessionIdRef.current) sessionIdRef.current = crypto.randomUUID();
 
     function playNext() {
       const url = audioQueueRef.current.shift();
@@ -127,9 +131,30 @@ export function useInterview() {
     }
     stopAudioRef.current = stopAudio;
 
-    ws.onopen = () => setConnected(true);
-    ws.onclose = () => setConnected(false);
-    ws.onmessage = (ev) => {
+    function connect() {
+      const ws = new WebSocket(`${WS_BASE}/ws/interview/${sessionIdRef.current}`);
+      wsRef.current = ws;
+      ws.onmessage = handleMessage;
+      ws.onopen = () => {
+        setConnected(true);
+        if (reconnectAttemptsRef.current > 0) setNotice(null);
+        reconnectAttemptsRef.current = 0;
+      };
+      ws.onclose = () => {
+        if (wsRef.current !== ws) return;
+        setConnected(false);
+        setThinking(false);
+        evaluatingRef.current = false;
+        setEvaluating(false);
+        if (intentionalCloseRef.current) return;
+        setNotice("Connection lost \u2014 reconnecting\u2026");
+        const delay = Math.min(5000, 500 * 2 ** reconnectAttemptsRef.current);
+        reconnectAttemptsRef.current += 1;
+        reconnectTimerRef.current = setTimeout(connect, delay);
+      };
+    }
+
+    function handleMessage(ev: MessageEvent) {
       const msg: ServerMessage = JSON.parse(ev.data);
       switch (msg.type) {
         case "session":
@@ -191,10 +216,12 @@ export function useInterview() {
           setEvaluating(true);
           break;
         case "feedback":
+          evaluatingRef.current = false;
           setEvaluating(false);
           if (msg.report) setFeedback(msg.report);
           break;
         case "feedback_error":
+          evaluatingRef.current = false;
           setNotice("Couldn't generate the report. Please try again.");
           setEvaluating(false);
           break;
@@ -207,10 +234,14 @@ export function useInterview() {
           setThinking(false);
           break;
       }
-    };
+    }
+
+    connect();
 
     return () => {
-      ws.close();
+      intentionalCloseRef.current = true;
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      wsRef.current?.close();
       stopAudioRef.current();
       listeningRef.current = false;
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
@@ -219,22 +250,37 @@ export function useInterview() {
     };
   }, []);
 
-  const send = useCallback((obj: Record<string, unknown>) => {
-    wsRef.current?.send(JSON.stringify(obj));
+  const send = useCallback((obj: Record<string, unknown>): boolean => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+    ws.send(JSON.stringify(obj));
+    return true;
   }, []);
 
   const start = useCallback(() => {
-    send({ type: "start" });
+    if (!send({ type: "start" })) {
+      setNotice("Not connected yet \u2014 give it a second and try again.");
+      return;
+    }
     setThinking(true);
   }, [send]);
 
   const sendUser = useCallback(
-    (text: string) => {
+    (text: string): boolean => {
       const trimmed = text.trim();
-      if (!trimmed) return;
-      setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: "candidate", text: trimmed }]);
-      send({ type: "user_message", text: trimmed });
+      if (!trimmed) return false;
+      if (!send({ type: "user_message", text: trimmed })) {
+        setNotice(
+          "Not connected \u2014 reconnecting. Your message wasn't sent; try again in a moment.",
+        );
+        return false;
+      }
+      setMessages((prev) => [
+        ...prev,
+        { id: crypto.randomUUID(), role: "candidate", text: trimmed },
+      ]);
       setThinking(true);
+      return true;
     },
     [send],
   );
@@ -259,7 +305,10 @@ export function useInterview() {
       const buf = new Uint8Array(await blob.arrayBuffer());
       let bin = "";
       for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
-      send({ type: "audio", data: btoa(bin), filename: "utterance.webm" });
+      if (!send({ type: "audio", data: btoa(bin), filename: "utterance.webm" })) {
+        setNotice("Not connected \u2014 couldn't send your audio. Reconnecting\u2026");
+        return;
+      }
       setThinking(true);
     },
     [send],
@@ -355,9 +404,15 @@ export function useInterview() {
     else void startListening();
   }, [startListening, stopListening]);
 
-  const finish = useCallback(() => {
+  const finish = useCallback((): boolean => {
+    if (evaluatingRef.current) return false;
+    if (!send({ type: "finish" })) {
+      setNotice("Not connected \u2014 reconnecting. Try \u201cEnd\u201d again in a moment.");
+      return false;
+    }
+    evaluatingRef.current = true;
     setEvaluating(true);
-    send({ type: "finish" });
+    return true;
   }, [send]);
 
   const dismissFeedback = useCallback(() => setFeedback(null), []);

@@ -47,8 +47,7 @@ export default function Home() {
 
   function handleSend() {
     if (!input.trim()) return;
-    sendUser(input);
-    setInput("");
+    if (sendUser(input)) setInput("");
   }
 
   return (

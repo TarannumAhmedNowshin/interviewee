@@ -134,6 +134,23 @@ async def stream_reply(session: MockSession, move: str, stage: str) -> AsyncIter
 
 async def evaluate(session: MockSession) -> dict:
     """Grade the whole interview with gpt-5 against a rubric; returns the report dict."""
+    # A live mock interview needs conversation; the editor starts with boilerplate, so the
+    # real "didn't engage" signal is zero candidate messages (not an empty editor).
+    if not any(t["role"] == "user" for t in session.history):
+        return {
+            "overall_score": 0,
+            "summary": (
+                "This round ended before you engaged with the interviewer. Start a fresh round, "
+                "talk through your approach, and write your solution in the editor to get a full "
+                "scored debrief."
+            ),
+            "dimensions": [],
+            "strengths": [],
+            "improvements": [
+                "Explain your approach and trade-offs before you start coding.",
+                "Write your solution in the editor so the interviewer can react to it.",
+            ],
+        }
     code = session.code.strip() or "(the editor was left empty)"
     user = (
         f"Problem: {session.problem_title} — {session.prompt}\n\n"

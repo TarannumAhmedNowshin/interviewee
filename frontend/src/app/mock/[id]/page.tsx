@@ -76,21 +76,29 @@ export default function MockRoom() {
   const [input, setInput] = useState("");
   const [started, setStarted] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(TOTAL_SECONDS);
+  const [loadError, setLoadError] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const secondsRef = useRef(TOTAL_SECONDS);
   const codeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const finishedRef = useRef(false);
 
   const source = sources[language] ?? "";
 
   useEffect(() => {
+    let cancelled = false;
+    setLoadError(false);
     getMockProblem(id)
       .then((p) => {
+        if (cancelled) return;
         setProblem(p);
         setSources(p.starter);
       })
-      .catch(() => setProblem(null));
+      .catch(() => {
+        if (!cancelled) setLoadError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
   useEffect(() => {
@@ -99,8 +107,6 @@ export default function MockRoom() {
   }, [messages, thinking]);
 
   const doFinish = useCallback(() => {
-    if (finishedRef.current) return;
-    finishedRef.current = true;
     finish();
   }, [finish]);
 
@@ -151,8 +157,7 @@ export default function MockRoom() {
 
   function handleSend() {
     if (!input.trim()) return;
-    sendUser(input);
-    setInput("");
+    if (sendUser(input)) setInput("");
   }
 
   function handleLanguage(lang: string) {
@@ -164,6 +169,20 @@ export default function MockRoom() {
     const code = v ?? "";
     setSources((s) => ({ ...s, [language]: code }));
     if (started) pushCode(code, language);
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-neutral-950 text-neutral-300">
+        <p>Couldn&apos;t load this problem.</p>
+        <Link
+          href="/mock"
+          className="rounded-md border border-neutral-700 px-4 py-2 text-sm hover:border-neutral-500"
+        >
+          ← Back to problems
+        </Link>
+      </div>
+    );
   }
 
   if (!problem) {
