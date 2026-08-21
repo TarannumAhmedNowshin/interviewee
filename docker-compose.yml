@@ -16,5 +16,23 @@ services:
       timeout: 5s
       retries: 5
 
+  # Sandboxed code execution for the Coding Arena.
+  piston:
+    image: ghcr.io/engineer-man/piston:latest
+    container_name: interviewwee-piston
+    privileged: true
+    # Dev-only: corporate TLS inspection breaks the container's runtime downloads
+    # from GitHub. This lets Piston fetch runtimes; do NOT use in production.
+    environment:
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+    ports:
+      - "2000:2000"
+    volumes:
+      - piston_packages:/piston/packages
+    tmpfs:
+      - /piston/jobs:exec,uid=1000,gid=1000
+    restart: unless-stopped
+
 volumes:
   pgdata:
+  piston_packages:

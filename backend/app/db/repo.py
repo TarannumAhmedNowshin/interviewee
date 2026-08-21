@@ -1,8 +1,8 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
-from app.db.models import InterviewSession, Turn
+from app.db.models import ArenaReview, ArenaSubmission, InterviewSession, Turn
 from app.db.session import async_session
 
 
@@ -97,3 +97,61 @@ async def get_session(session_id: str) -> dict | None:
                 for t in turns
             ],
         }
+
+
+# Spaced-repetition intervals (days) indexed by successful-solve count.
+_REVIEW_INTERVALS_DAYS = [1, 3, 7, 16, 35]
+
+
+async def save_arena_submission(
+    problem_id: str, language: str, passed: int, total: int, solved: bool
+) -> None:
+    async with async_session() as db:
+        db.add(
+            ArenaSubmission(
+                problem_id=problem_id,
+                language=language,
+                passed=passed,
+                total=total,
+                solved=solved,
+            )
+        )
+        if solved:
+            rev = await db.get(ArenaReview, problem_id)
+            if rev is None:
+                rev = ArenaReview(problem_id=problem_id)
+                db.add(rev)
+            rev.solved = True
+            rev.reps = (rev.reps or 0) + 1
+            rev.interval_days = _REVIEW_INTERVALS_DAYS[
+                min(rev.reps - 1, len(_REVIEW_INTERVALS_DAYS) - 1)
+            ]
+            rev.due_at = datetime.now(timezone.utc) + timedelta(days=rev.interval_days)
+        await db.commit()
+
+
+async def get_arena_progress() -> dict:
+    async with async_session() as db:
+        sub_rows = (
+            await db.execute(
+                select(
+                    ArenaSubmission.problem_id,
+                    func.count().label("attempts"),
+                ).group_by(ArenaSubmission.problem_id)
+            )
+        ).all()
+        reviews = (await db.execute(select(ArenaReview))).scalars().all()
+        now = datetime.now(timezone.utc)
+        out: dict[str, dict] = {
+            r.problem_id: {"attempts": r.attempts, "solved": False, "due": False, "due_at": None}
+            for r in sub_rows
+        }
+        for rev in reviews:
+            entry = out.setdefault(
+                rev.problem_id,
+                {"attempts": 0, "solved": False, "due": False, "due_at": None},
+            )
+            entry["solved"] = rev.solved
+            entry["due"] = bool(rev.due_at and rev.due_at <= now)
+            entry["due_at"] = rev.due_at.isoformat() if rev.due_at else None
+        return out

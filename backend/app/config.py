@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     # infrastructure
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5433/interviewwee"
     frontend_origin: str = "http://localhost:3000"
+    piston_url: str = "http://localhost:2000"
 
     @property
     def gpt5_configured(self) -> bool:

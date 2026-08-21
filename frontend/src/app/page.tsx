@@ -59,6 +59,9 @@ export default function Home() {
           <p className="text-sm text-neutral-500">System design interview</p>
         </div>
         <div className="flex items-center gap-4 text-sm text-neutral-400">
+          <Link href="/arena" className="text-neutral-400 transition hover:text-neutral-200">
+            Arena
+          </Link>
           <Link href="/history" className="text-neutral-400 transition hover:text-neutral-200">
             History
           </Link>
