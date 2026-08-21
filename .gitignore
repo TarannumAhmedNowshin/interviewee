@@ -1,0 +1,75 @@
+# ─── Secrets — NEVER commit ─────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.der
+id_rsa*
+credentials.json
+secrets.json
+service-account*.json
+*.secret
+*.secrets
+
+# ─── Python ─────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+*.egg-info/
+.eggs/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pytype/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+.ipynb_checkpoints/
+
+# ─── Node / Next.js ─────────────────────────────────
+node_modules/
+.next/
+out/
+dist/
+build/
+.pnp
+.pnp.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-debug.log*
+*.tsbuildinfo
+next-env.d.ts
+.vercel
+
+# ─── Session recordings / data ──────────────────────
+/data/
+*.wav
+*.mp3
+
+# ─── Logs & scratch output ──────────────────────────
+*.log
+*.out
+*_result.txt
+
+# ─── OS / editor ────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+*~
