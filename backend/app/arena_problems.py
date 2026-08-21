@@ -168,7 +168,8 @@ PROBLEMS: list[Problem] = [
                 "function maxSubarray(nums) {\n"
                 "  // TODO: return the maximum subarray sum\n"
                 "}\n\n"
-                "const nums = require('fs').readFileSync(0, 'utf8').trim().split(/\\s+/).map(Number);\n"
+                "const nums = require('fs').readFileSync(0, 'utf8')"
+                ".trim().split(/\\s+/).map(Number);\n"
                 "console.log(maxSubarray(nums));\n"
             ),
             "cpp": (

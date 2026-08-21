@@ -1,8 +1,8 @@
-"""WebSocket for the Live Mock Coding Interview (Pillar 3).
+"""WebSocket for the Behavioral Voice Round (Pillar 4).
 
-Protocol (client -> server): start {problem_id, language}, user_message {text},
-audio {data, filename}, code {code, language, seconds_left}, interrupt, set_voice
-{enabled}, finish, end.
+Protocol (client -> server): start {question_id}, user_message {text},
+audio {data, filename}, interrupt, set_voice {enabled}, finish, end.
+Reuses the same voice pipeline (TTS + Whisper STT + client VAD + barge-in).
 """
 
 import asyncio
@@ -11,11 +11,11 @@ import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from app import mock_orchestrator as orch
+from app import behavioral_orchestrator as orch
 from app.db import repo
 from app.services import stt, tts
 
-log = logging.getLogger("interview.mock_ws")
+log = logging.getLogger("interview.behavioral_ws")
 router = APIRouter()
 
 
@@ -27,8 +27,8 @@ async def _persist(coro) -> None:
         log.exception("persist failed")
 
 
-@router.websocket("/ws/mock/{session_id}")
-async def mock(ws: WebSocket, session_id: str) -> None:
+@router.websocket("/ws/behavioral/{session_id}")
+async def behavioral(ws: WebSocket, session_id: str) -> None:
     await ws.accept()
     session = await orch.get_or_create(session_id)
 
@@ -54,31 +54,23 @@ async def mock(ws: WebSocket, session_id: str) -> None:
             data = await ws.receive_json()
             msg_type = data.get("type")
             if msg_type == "start":
-                orch.configure(
-                    session, data.get("problem_id") or "", data.get("language") or "python"
-                )
+                orch.configure(session, data.get("question_id") or "")
                 await ws.send_json(
                     {
                         "type": "session",
                         "session_id": session_id,
-                        "problem_id": session.problem_id,
-                        "problem_title": session.problem_title,
-                        "prompt": session.prompt,
+                        "question_id": session.question_id,
+                        "question_title": session.question_title,
+                        "question": session.question,
+                        "category": session.category,
                     }
                 )
                 await _persist(
-                    repo.create_mock_session(
-                        session_id, session.problem_id, session.problem_title, session.language
+                    repo.create_behavioral_session(
+                        session_id, session.question_id, session.question_title, session.category
                     )
                 )
                 await respond(opening=True)
-            elif msg_type == "code":
-                session.code = data.get("code") or ""
-                if data.get("language"):
-                    session.language = data["language"]
-                if data.get("seconds_left") is not None:
-                    session.seconds_left = int(data["seconds_left"])
-                await _persist(repo.update_mock_code(session_id, session.language, session.code))
             elif msg_type == "user_message":
                 text = (data.get("text") or "").strip()
                 if not text:
@@ -86,7 +78,7 @@ async def mock(ws: WebSocket, session_id: str) -> None:
                 await cancel_current()
                 session.history.append({"role": "user", "content": text})
                 await _persist(
-                    repo.add_mock_turn(session_id, len(session.history) - 1, "user", text)
+                    repo.add_behavioral_turn(session_id, len(session.history) - 1, "user", text)
                 )
                 await respond(opening=False)
             elif msg_type == "audio":
@@ -106,7 +98,7 @@ async def mock(ws: WebSocket, session_id: str) -> None:
                 await ws.send_json({"type": "transcript", "text": text})
                 session.history.append({"role": "user", "content": text})
                 await _persist(
-                    repo.add_mock_turn(session_id, len(session.history) - 1, "user", text)
+                    repo.add_behavioral_turn(session_id, len(session.history) - 1, "user", text)
                 )
                 await respond(opening=False)
             elif msg_type == "interrupt":
@@ -124,7 +116,7 @@ async def mock(ws: WebSocket, session_id: str) -> None:
                     await ws.send_json({"type": "feedback_error"})
                     continue
                 await ws.send_json({"type": "feedback", "report": report})
-                await _persist(repo.save_mock_report(session_id, report))
+                await _persist(repo.save_behavioral_report(session_id, report))
             elif msg_type == "end":
                 await cancel_current()
                 await ws.send_json({"type": "ended"})
@@ -132,7 +124,7 @@ async def mock(ws: WebSocket, session_id: str) -> None:
                 return
     except WebSocketDisconnect:
         await cancel_current()
-        log.info("mock client disconnected: %s", session_id)
+        log.info("behavioral client disconnected: %s", session_id)
 
 
 async def _safe_emit(ws: WebSocket, session, *, opening: bool) -> None:
@@ -146,7 +138,7 @@ async def _safe_emit(ws: WebSocket, session, *, opening: bool) -> None:
 
 async def _emit(ws: WebSocket, session, *, opening: bool) -> None:
     if opening:
-        state = {"stage": "intro", "move": "pose_problem", "note": "greet and pose the problem"}
+        state = {"stage": "intro", "move": "ask_question", "note": "greet and ask the question"}
         stream = orch.stream_opening(session)
     else:
         state = await orch.decide(session)
@@ -168,7 +160,7 @@ async def _emit(ws: WebSocket, session, *, opening: bool) -> None:
         session.history.append({"role": "assistant", "content": full})
     if full.strip():
         await _persist(
-            repo.add_mock_turn(
+            repo.add_behavioral_turn(
                 session.id,
                 len(session.history) - 1,
                 "assistant",

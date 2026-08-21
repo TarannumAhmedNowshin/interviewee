@@ -8,3 +8,4 @@ sqlalchemy>=2.0
 asyncpg>=0.30
 greenlet>=3.0
 ruff>=0.6
+pytest>=8.0

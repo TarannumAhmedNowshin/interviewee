@@ -50,6 +50,9 @@ export default function ArenaList() {
           <Link href="/mock" className="hover:text-neutral-100">
             Mock
           </Link>
+          <Link href="/behavioral" className="hover:text-neutral-100">
+            Behavioral
+          </Link>
           <Link href="/history" className="hover:text-neutral-100">
             History
           </Link>

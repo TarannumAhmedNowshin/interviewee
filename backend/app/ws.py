@@ -23,7 +23,7 @@ async def _persist(coro) -> None:
 @router.websocket("/ws/interview/{session_id}")
 async def interview(ws: WebSocket, session_id: str) -> None:
     await ws.accept()
-    session = orchestrator.get_or_create(session_id)
+    session = await orchestrator.get_or_create(session_id)
     await ws.send_json({"type": "session", "session_id": session_id, "problem": session.problem})
     await _persist(repo.create_session(session_id, session.problem))
 

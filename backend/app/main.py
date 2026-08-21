@@ -5,6 +5,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.arena import router as arena_router
+from app.behavioral import router as behavioral_router
+from app.behavioral_ws import router as behavioral_ws_router
 from app.config import get_settings
 from app.db import repo
 from app.db.session import init_db
@@ -40,6 +42,8 @@ app.include_router(ws_router)
 app.include_router(arena_router)
 app.include_router(mock_router)
 app.include_router(mock_ws_router)
+app.include_router(behavioral_router)
+app.include_router(behavioral_ws_router)
 
 
 @app.get("/")

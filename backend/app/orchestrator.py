@@ -2,6 +2,7 @@ import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 
+from app.db import repo
 from app.interviewer import (
     DIRECTOR_SYSTEM,
     INTERVIEWER_SYSTEM,
@@ -20,17 +21,35 @@ class Session:
     stage: str = "intro"
     voice_enabled: bool = True
     diagram: str | None = None  # latest whiteboard PNG, base64 (no data-URL prefix)
-    history: list[dict] = field(default_factory=list)  # {"role": "user"|"assistant", "content": str}
+    history: list[dict] = field(default_factory=list)  # {"role", "content"} messages
 
 
 _SESSIONS: dict[str, Session] = {}
 
 
-def get_or_create(session_id: str) -> Session:
+async def get_or_create(session_id: str) -> Session:
     if session_id not in _SESSIONS:
         problem = PROBLEMS[hash(session_id) % len(PROBLEMS)]
-        _SESSIONS[session_id] = Session(id=session_id, problem=problem)
+        session = Session(id=session_id, problem=problem)
+        await _try_rehydrate(session)
+        _SESSIONS[session_id] = session
     return _SESSIONS[session_id]
+
+
+async def _try_rehydrate(session: Session) -> None:
+    """Restore a live session's context from the DB (e.g. after a backend restart)."""
+    try:
+        data = await repo.get_session(session.id)
+    except Exception:
+        return
+    if not data or data.get("status") == "ended":
+        return
+    if data.get("problem"):
+        session.problem = data["problem"]
+    if data.get("stage"):
+        session.stage = data["stage"]
+    session.diagram = data.get("diagram")
+    session.history = [{"role": t["role"], "content": t["text"]} for t in data.get("turns", [])]
 
 
 def _transcript(session: Session) -> str:
@@ -93,7 +112,10 @@ async def stream_reply(session: Session, move: str, stage: str) -> AsyncIterator
                 "content": [
                     {
                         "type": "text",
-                        "text": "This is my current whiteboard for the design. Refer to it when relevant.",
+                        "text": (
+                            "This is my current whiteboard for the design. "
+                            "Refer to it when relevant."
+                        ),
                     },
                     {
                         "type": "image_url",

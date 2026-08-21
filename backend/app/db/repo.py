@@ -1,10 +1,12 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 
 from app.db.models import (
     ArenaReview,
     ArenaSubmission,
+    BehavioralSession,
+    BehavioralTurn,
     InterviewSession,
     MockSession,
     MockTurn,
@@ -49,7 +51,7 @@ async def save_report(session_id: str, report: dict, stage: str) -> None:
             row.report = report
             row.status = "ended"
             row.stage = stage
-            row.ended_at = datetime.now(timezone.utc)
+            row.ended_at = datetime.now(UTC)
             await db.commit()
 
 
@@ -133,7 +135,7 @@ async def save_arena_submission(
             rev.interval_days = _REVIEW_INTERVALS_DAYS[
                 min(rev.reps - 1, len(_REVIEW_INTERVALS_DAYS) - 1)
             ]
-            rev.due_at = datetime.now(timezone.utc) + timedelta(days=rev.interval_days)
+            rev.due_at = datetime.now(UTC) + timedelta(days=rev.interval_days)
         await db.commit()
 
 
@@ -184,7 +186,7 @@ async def save_mock_report(session_id: str, report: dict) -> None:
         if row:
             row.report = report
             row.status = "ended"
-            row.ended_at = datetime.now(timezone.utc)
+            row.ended_at = datetime.now(UTC)
             await db.commit()
 
 
@@ -245,6 +247,110 @@ async def get_mock_session(session_id: str) -> dict | None:
         }
 
 
+async def create_behavioral_session(
+    session_id: str, question_id: str, question_title: str, category: str
+) -> None:
+    async with async_session() as db:
+        if await db.get(BehavioralSession, session_id):
+            return
+        db.add(
+            BehavioralSession(
+                id=session_id,
+                question_id=question_id,
+                question_title=question_title,
+                category=category,
+            )
+        )
+        await db.commit()
+
+
+async def add_behavioral_turn(
+    session_id: str,
+    idx: int,
+    role: str,
+    text: str,
+    stage: str | None = None,
+    move: str | None = None,
+) -> None:
+    async with async_session() as db:
+        db.add(
+            BehavioralTurn(
+                session_id=session_id, idx=idx, role=role, text=text, stage=stage, move=move
+            )
+        )
+        await db.commit()
+
+
+async def save_behavioral_report(session_id: str, report: dict) -> None:
+    async with async_session() as db:
+        row = await db.get(BehavioralSession, session_id)
+        if row:
+            row.report = report
+            row.status = "ended"
+            row.ended_at = datetime.now(UTC)
+            await db.commit()
+
+
+async def list_behavioral_sessions(limit: int = 50) -> list[dict]:
+    async with async_session() as db:
+        rows = (
+            (
+                await db.execute(
+                    select(BehavioralSession)
+                    .order_by(BehavioralSession.started_at.desc())
+                    .limit(limit)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return [
+            {
+                "id": r.id,
+                "question_id": r.question_id,
+                "question_title": r.question_title,
+                "category": r.category,
+                "status": r.status,
+                "started_at": r.started_at.isoformat() if r.started_at else None,
+                "ended_at": r.ended_at.isoformat() if r.ended_at else None,
+                "overall_score": (r.report or {}).get("overall_score"),
+            }
+            for r in rows
+        ]
+
+
+async def get_behavioral_session(session_id: str) -> dict | None:
+    async with async_session() as db:
+        row = await db.get(BehavioralSession, session_id)
+        if not row:
+            return None
+        turns = (
+            (
+                await db.execute(
+                    select(BehavioralTurn)
+                    .where(BehavioralTurn.session_id == session_id)
+                    .order_by(BehavioralTurn.idx)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return {
+            "id": row.id,
+            "question_id": row.question_id,
+            "question_title": row.question_title,
+            "category": row.category,
+            "status": row.status,
+            "report": row.report,
+            "started_at": row.started_at.isoformat() if row.started_at else None,
+            "ended_at": row.ended_at.isoformat() if row.ended_at else None,
+            "turns": [
+                {"idx": t.idx, "role": t.role, "text": t.text, "stage": t.stage, "move": t.move}
+                for t in turns
+            ],
+        }
+
+
 async def get_arena_progress() -> dict:
     async with async_session() as db:
         sub_rows = (
@@ -256,7 +362,7 @@ async def get_arena_progress() -> dict:
             )
         ).all()
         reviews = (await db.execute(select(ArenaReview))).scalars().all()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         out: dict[str, dict] = {
             r.problem_id: {"attempts": r.attempts, "solved": False, "due": False, "due_at": None}
             for r in sub_rows

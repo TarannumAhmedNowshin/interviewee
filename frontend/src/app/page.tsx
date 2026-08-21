@@ -64,6 +64,9 @@ export default function Home() {
           <Link href="/mock" className="text-neutral-400 transition hover:text-neutral-200">
             Mock
           </Link>
+          <Link href="/behavioral" className="text-neutral-400 transition hover:text-neutral-200">
+            Behavioral
+          </Link>
           <Link href="/history" className="text-neutral-400 transition hover:text-neutral-200">
             History
           </Link>

@@ -10,6 +10,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 
 from app import arena_problems
+from app.db import repo
 from app.mock_interviewer import (
     DIRECTOR_SYSTEM,
     INTERVIEWER_SYSTEM,
@@ -37,10 +38,34 @@ class MockSession:
 _SESSIONS: dict[str, MockSession] = {}
 
 
-def get_or_create(session_id: str) -> MockSession:
+async def get_or_create(session_id: str) -> MockSession:
     if session_id not in _SESSIONS:
-        _SESSIONS[session_id] = MockSession(id=session_id)
+        session = MockSession(id=session_id)
+        await _try_rehydrate(session)
+        _SESSIONS[session_id] = session
     return _SESSIONS[session_id]
+
+
+async def _try_rehydrate(session: MockSession) -> None:
+    """Restore a live session's context from the DB (e.g. after a backend restart)."""
+    try:
+        data = await repo.get_mock_session(session.id)
+    except Exception:
+        return
+    if not data or data.get("status") == "ended":
+        return
+    problem = arena_problems.get(data.get("problem_id") or "")
+    if problem:
+        session.problem_id = problem["id"]
+        session.problem_title = problem["title"]
+        session.prompt = problem["prompt"]
+    session.language = data.get("language") or "python"
+    session.code = data.get("code") or ""
+    session.history = [{"role": t["role"], "content": t["text"]} for t in data.get("turns", [])]
+    for turn in reversed(data.get("turns", [])):
+        if turn.get("stage"):
+            session.stage = turn["stage"]
+            break
 
 
 def configure(session: MockSession, problem_id: str, language: str) -> None:

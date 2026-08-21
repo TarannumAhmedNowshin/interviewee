@@ -56,11 +56,20 @@ def _normalize(s: str) -> str:
 async def _run_one(language: str, source: str, test: dict, index: int) -> dict:
     res = await executor.execute(language, source, stdin=test["input"])
     if not res.get("ok"):
-        return {"index": index, "passed": False, "hidden": test["hidden"], "error": res.get("error")}
+        return {
+            "index": index,
+            "passed": False,
+            "hidden": test["hidden"],
+            "error": res.get("error"),
+        }
     ok = _normalize(res.get("stdout", "")) == _normalize(test["output"])
     out: dict = {"index": index, "passed": ok, "hidden": test["hidden"]}
     if not test["hidden"]:
-        out |= {"input": test["input"], "expected": test["output"], "got": (res.get("stdout") or "").strip()}
+        out |= {
+            "input": test["input"],
+            "expected": test["output"],
+            "got": (res.get("stdout") or "").strip(),
+        }
     err = res.get("stderr") or res.get("compile_stderr")
     if err and not ok:
         out["stderr"] = err.strip()[:2000]

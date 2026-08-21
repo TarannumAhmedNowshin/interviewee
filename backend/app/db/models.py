@@ -16,7 +16,7 @@ class InterviewSession(Base):
     problem: Mapped[str] = mapped_column(Text)
     stage: Mapped[str] = mapped_column(String, default="intro")
     status: Mapped[str] = mapped_column(String, default="active")  # active | ended
-    diagram: Mapped[str | None] = mapped_column(Text, nullable=True)  # latest whiteboard PNG (base64)
+    diagram: Mapped[str | None] = mapped_column(Text, nullable=True)  # whiteboard PNG b64
     report: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -103,3 +103,39 @@ class MockTurn(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     session: Mapped["MockSession"] = relationship(back_populates="turns")
+
+
+class BehavioralSession(Base):
+    """A Behavioral Voice Round (Pillar 4): spoken STAR-method Q&A."""
+
+    __tablename__ = "behavioral_sessions"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    question_id: Mapped[str] = mapped_column(String)
+    question_title: Mapped[str] = mapped_column(String)
+    category: Mapped[str] = mapped_column(String, default="")
+    status: Mapped[str] = mapped_column(String, default="active")  # active | ended
+    report: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    turns: Mapped[list["BehavioralTurn"]] = relationship(
+        back_populates="session", cascade="all, delete-orphan", order_by="BehavioralTurn.idx"
+    )
+
+
+class BehavioralTurn(Base):
+    __tablename__ = "behavioral_turns"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("behavioral_sessions.id", ondelete="CASCADE"), index=True
+    )
+    idx: Mapped[int] = mapped_column(Integer)
+    role: Mapped[str] = mapped_column(String)  # user | assistant
+    text: Mapped[str] = mapped_column(Text)
+    stage: Mapped[str | None] = mapped_column(String, nullable=True)
+    move: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    session: Mapped["BehavioralSession"] = relationship(back_populates="turns")
