@@ -9,7 +9,9 @@ import asyncio
 from app import arena_problems, behavioral_questions
 from app import behavioral_orchestrator as beh
 from app import mock_orchestrator as mock
+from app import orchestrator as design
 from app.arena import _normalize
+from app.interviewer import PROBLEMS, get_design_problem
 
 
 def test_arena_normalize_trims_trailing_space_and_blank_lines():
@@ -30,6 +32,17 @@ def test_arena_problem_bank():
     assert len(arena_problems.public_summary()) >= 1
     assert arena_problems.get("two-sum") is not None
     assert arena_problems.get("nope") is None
+
+
+def test_design_select_problem_honors_seeded_id_and_falls_back():
+    # A seeded ?problem= id (from a prep plan) returns exactly that problem.
+    chosen = get_design_problem("group-chat")
+    assert design._select_problem("sess-a", "group-chat") == chosen["prompt"]
+    # An unknown id falls back to a real problem from the bank...
+    assert design._select_problem("sess-a", "does-not-exist") in PROBLEMS
+    # ...and no id is deterministic (sha256, stable across restarts).
+    assert design._select_problem("sess-a", None) == design._select_problem("sess-a", None)
+    assert design._select_problem("sess-a", None) in PROBLEMS
 
 
 def test_behavioral_configure_loads_prompt_and_falls_back():

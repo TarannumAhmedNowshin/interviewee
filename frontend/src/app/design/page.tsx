@@ -2,7 +2,8 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useRef, useState } from "react";
 import FeedbackReport from "../../components/FeedbackReport";
 import { useInterview } from "../../lib/useInterview";
 
@@ -19,10 +20,17 @@ const STAGES: { key: string; label: string }[] = [
 ];
 
 export default function DesignRoom() {
-  const [problemId] = useState<string | undefined>(() => {
-    if (typeof window === "undefined") return undefined;
-    return new URLSearchParams(window.location.search).get("problem") ?? undefined;
-  });
+  // useSearchParams (router-driven) is read reliably on client-side navigation;
+  // reading window.location.search in a useState initializer races the URL commit.
+  return (
+    <Suspense fallback={null}>
+      <DesignRoomInner />
+    </Suspense>
+  );
+}
+
+function DesignRoomInner() {
+  const problemId = useSearchParams().get("problem") ?? undefined;
   const {
     connected,
     problem,

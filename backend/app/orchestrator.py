@@ -46,12 +46,14 @@ async def get_or_create(session_id: str, problem_id: str | None = None) -> Sessi
     if existing is not None:
         return existing
     session = Session(id=session_id, problem=_select_problem(session_id, problem_id))
-    await _try_rehydrate(session)
+    # A seeded problem (?problem= from a prep plan) is authoritative: don't let a
+    # stale DB row for this id rehydrate a *different* problem over the chosen one.
+    await _try_rehydrate(session, pinned_problem=problem_id is not None)
     _SESSIONS.set(session_id, session)
     return session
 
 
-async def _try_rehydrate(session: Session) -> None:
+async def _try_rehydrate(session: Session, pinned_problem: bool = False) -> None:
     """Restore a live session's context from the DB (e.g. after a backend restart)."""
     try:
         data = await repo.get_session(session.id)
@@ -59,7 +61,11 @@ async def _try_rehydrate(session: Session) -> None:
         return
     if not data or data.get("status") != "active":
         return
-    if data.get("problem"):
+    # A pinned problem for a different stored interview means "start this problem
+    # fresh", not "resume that one" — skip rehydration entirely on mismatch.
+    if pinned_problem and data.get("problem") and data["problem"] != session.problem:
+        return
+    if data.get("problem") and not pinned_problem:
         session.problem = data["problem"]
     if data.get("stage"):
         session.stage = data["stage"]
