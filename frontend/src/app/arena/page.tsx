@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import SiteHeader from "../../components/SiteHeader";
 import {
   getProgress,
   listProblems,
@@ -30,43 +31,30 @@ export default function ArenaList() {
   const dueCount = Object.values(progress).filter((p) => p.due).length;
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100">
-      <header className="flex items-center justify-between border-b border-neutral-800 px-6 py-4">
-        <div>
-          <h1 className="text-lg font-semibold tracking-tight">Coding Arena</h1>
-          <p className="text-sm text-neutral-500">
-            Practice by pattern — real execution, AI review
-            {dueCount > 0 && (
-              <span className="ml-2 rounded bg-amber-500/15 px-2 py-0.5 text-xs text-amber-300">
-                {dueCount} due for review
-              </span>
-            )}
-          </p>
-        </div>
-        <nav className="flex gap-4 text-sm text-neutral-400">
-          <Link href="/" className="hover:text-neutral-100">
-            Interview
-          </Link>
-          <Link href="/mock" className="hover:text-neutral-100">
-            Mock
-          </Link>
-          <Link href="/behavioral" className="hover:text-neutral-100">
-            Behavioral
-          </Link>
-          <Link href="/history" className="hover:text-neutral-100">
-            History
-          </Link>
-        </nav>
-      </header>
+    <div className="min-h-screen bg-[#08080a] text-neutral-100">
+      <SiteHeader />
 
-      <main className="mx-auto max-w-3xl px-6 py-8">
+      <main className="mx-auto max-w-4xl px-6 py-12">
+        <div className="mb-8 flex items-end justify-between gap-6 border-b border-white/8 pb-6">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">Coding Arena</h1>
+            <p className="mt-1.5 text-sm text-neutral-500">
+              Drill algorithm patterns — real execution, AI review, spaced repetition.
+            </p>
+          </div>
+          {dueCount > 0 && (
+            <span className="shrink-0 rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-300">
+              {dueCount} due for review
+            </span>
+          )}
+        </div>
         {error && <p className="text-rose-400">Couldn&apos;t reach the server. Is the backend running?</p>}
         <ul className="space-y-3">
           {problems.map((p) => (
             <li key={p.id}>
               <Link
                 href={`/arena/${p.id}`}
-                className="flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900/50 px-5 py-4 transition hover:border-neutral-600 hover:bg-neutral-900"
+                className="flex items-center justify-between rounded-xl border border-white/8 bg-white/2 px-5 py-4 transition hover:border-white/20 hover:bg-white/4"
               >
                 <div>
                   <div className="font-medium text-neutral-100">{p.title}</div>

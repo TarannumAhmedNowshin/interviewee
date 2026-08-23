@@ -22,9 +22,10 @@ services:
     container_name: interviewwee-piston
     privileged: true
     # Dev-only: corporate TLS inspection breaks the container's runtime downloads
-    # from GitHub. This lets Piston fetch runtimes; do NOT use in production.
+    # from GitHub. "0" lets Piston fetch runtimes past an intercepting proxy; set
+    # PISTON_TLS_REJECT=1 in .env for a real deployment that trusts the CA properly.
     environment:
-      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+      NODE_TLS_REJECT_UNAUTHORIZED: "${PISTON_TLS_REJECT:-0}"
     ports:
       - "2000:2000"
     volumes:

@@ -23,12 +23,49 @@ MOVES = [
     "wrap_up",
 ]
 
-PROBLEMS = [
-    "Design a URL shortening service like Bitly.",
-    "Design a news feed like Twitter's timeline.",
-    "Design a ride-hailing backend like Uber.",
-    "Design a group chat system like WhatsApp.",
+# Design-round problem bank. Each item has a stable id so a prep plan (or a direct
+# link) can seed a specific problem; PROBLEMS stays a list of prompt strings for the
+# orchestrator's default hash-based assignment.
+DESIGN_PROBLEMS: list[dict] = [
+    {
+        "id": "url-shortener",
+        "title": "URL Shortener",
+        "patterns": ["Hashing", "Key-value store", "Read-heavy"],
+        "prompt": "Design a URL shortening service like Bitly.",
+    },
+    {
+        "id": "news-feed",
+        "title": "Social News Feed",
+        "patterns": ["Fan-out", "Caching", "Ranking"],
+        "prompt": "Design a news feed like Twitter's timeline.",
+    },
+    {
+        "id": "ride-hailing",
+        "title": "Ride-Hailing Backend",
+        "patterns": ["Geospatial", "Matching", "Real-time"],
+        "prompt": "Design a ride-hailing backend like Uber.",
+    },
+    {
+        "id": "group-chat",
+        "title": "Group Chat System",
+        "patterns": ["Messaging", "Fan-out", "Presence"],
+        "prompt": "Design a group chat system like WhatsApp.",
+    },
 ]
+
+PROBLEMS: list[str] = [p["prompt"] for p in DESIGN_PROBLEMS]
+
+_DESIGN_BY_ID = {p["id"]: p for p in DESIGN_PROBLEMS}
+
+
+def get_design_problem(problem_id: str) -> dict | None:
+    return _DESIGN_BY_ID.get(problem_id)
+
+
+def design_public_summary() -> list[dict]:
+    return [
+        {"id": p["id"], "title": p["title"], "patterns": p["patterns"]} for p in DESIGN_PROBLEMS
+    ]
 
 INTERVIEWER_SYSTEM = """You are a senior staff software engineer at a top tech company, running a \
 real-time SYSTEM DESIGN interview. You speak out loud, like a real person on a call.
@@ -45,7 +82,8 @@ names unless the candidate justifies them.
 (for example: 10x traffic, or a region failing).
 - At the high-level design stage, ask the candidate to sketch/draw the architecture.
 - Near the end, ask the candidate about their OWN related experience or projects.
-- Never say the words "stage" or "move", and never output labels or meta-commentary. Just talk."""
+- Never say the words "stage" or "move", and never output labels or meta-commentary. Just talk.
+- Everything you say is read aloud as speech — never use emojis, emoticons, or symbols."""
 
 DIRECTOR_SYSTEM = """You are the DIRECTOR of a system design interview. Given the transcript and \
 the current stage, decide what the interviewer should do next.

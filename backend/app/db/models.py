@@ -139,3 +139,17 @@ class BehavioralTurn(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     session: Mapped["BehavioralSession"] = relationship(back_populates="turns")
+
+
+class PrepPlan(Base):
+    """A personalized prep plan (Point 0): JD + CV -> a curated cross-pillar syllabus."""
+
+    __tablename__ = "prep_plans"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    title: Mapped[str] = mapped_column(String, default="")
+    target_role: Mapped[str] = mapped_column(String, default="")
+    jd: Mapped[str] = mapped_column(Text)  # source job description
+    cv: Mapped[str] = mapped_column(Text)  # source CV / resume
+    plan: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # validated plan JSON
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

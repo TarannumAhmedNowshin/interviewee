@@ -3,7 +3,7 @@
 import Editor, { type OnMount } from "@monaco-editor/react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type ComponentProps, useCallback, useEffect, useRef, useState } from "react";
 import FeedbackReport from "../../../components/FeedbackReport";
 import { getMockProblem, type MockProblemDetail } from "../../../lib/mock";
 import { useMockInterview } from "../../../lib/useMockInterview";
@@ -23,7 +23,7 @@ const DIFF: Record<string, string> = {
 const TOTAL_SECONDS = 25 * 60; // 25-minute round
 
 // A "bare" editor: no autocomplete, no suggestions, no squiggles — like a real interview pad.
-const BARE_OPTIONS = {
+const BARE_OPTIONS: ComponentProps<typeof Editor>["options"] = {
   minimap: { enabled: false },
   fontSize: 14,
   scrollBeyondLastLine: false,
@@ -37,7 +37,7 @@ const BARE_OPTIONS = {
   occurrencesHighlight: "off",
   renderValidationDecorations: "off",
   lightbulb: { enabled: false },
-} as const;
+};
 
 function fmt(seconds: number): string {
   const s = Math.max(0, seconds);

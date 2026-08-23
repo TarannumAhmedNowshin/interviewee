@@ -1,6 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from app.db.models import (
     ArenaReview,
@@ -10,6 +10,7 @@ from app.db.models import (
     InterviewSession,
     MockSession,
     MockTurn,
+    PrepPlan,
     Turn,
 )
 from app.db.session import async_session
@@ -376,3 +377,70 @@ async def get_arena_progress() -> dict:
             entry["due"] = bool(rev.due_at and rev.due_at <= now)
             entry["due_at"] = rev.due_at.isoformat() if rev.due_at else None
         return out
+
+
+async def create_prep_plan(
+    plan_id: str, title: str, target_role: str, jd: str, cv: str, plan: dict
+) -> None:
+    async with async_session() as db:
+        if await db.get(PrepPlan, plan_id):
+            return
+        db.add(
+            PrepPlan(id=plan_id, title=title, target_role=target_role, jd=jd, cv=cv, plan=plan)
+        )
+        await db.commit()
+
+
+async def list_prep_plans(limit: int = 50) -> list[dict]:
+    async with async_session() as db:
+        rows = (
+            (await db.execute(select(PrepPlan).order_by(PrepPlan.created_at.desc()).limit(limit)))
+            .scalars()
+            .all()
+        )
+        return [
+            {
+                "id": r.id,
+                "title": r.title,
+                "target_role": r.target_role,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ]
+
+
+async def get_prep_plan(plan_id: str) -> dict | None:
+    async with async_session() as db:
+        row = await db.get(PrepPlan, plan_id)
+        if not row:
+            return None
+        return {
+            "id": row.id,
+            "title": row.title,
+            "target_role": row.target_role,
+            "plan": row.plan,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        }
+
+
+async def expire_stale_sessions(older_than_hours: int = 24) -> int:
+    """Flip long-abandoned 'active' sessions to 'expired' so history isn't full of zombies.
+
+    A session only becomes 'ended' when the user explicitly finishes; a refreshed or
+    closed tab otherwise leaves a perpetual 'active' row. This sweep (run on startup)
+    retires ones older than the cutoff. 'expired' is distinct from 'ended' so it stays
+    honest about what happened, and it is treated as non-resumable on rehydrate.
+    """
+    cutoff = datetime.now(UTC) - timedelta(hours=older_than_hours)
+    now = datetime.now(UTC)
+    total = 0
+    async with async_session() as db:
+        for model in (InterviewSession, MockSession, BehavioralSession):
+            result = await db.execute(
+                update(model)
+                .where(model.status == "active", model.started_at < cutoff)
+                .values(status="expired", ended_at=now)
+            )
+            total += result.rowcount or 0
+        await db.commit()
+    return total

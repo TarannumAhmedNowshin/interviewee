@@ -7,6 +7,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app import orchestrator
 from app.db import repo
 from app.services import stt, tts
+from app.ws_guard import accept_within_limit
 
 log = logging.getLogger("interview.ws")
 router = APIRouter()
@@ -22,8 +23,11 @@ async def _persist(coro) -> None:
 
 @router.websocket("/ws/interview/{session_id}")
 async def interview(ws: WebSocket, session_id: str) -> None:
-    await ws.accept()
-    session = await orchestrator.get_or_create(session_id)
+    if not await accept_within_limit(ws):
+        return
+    # An optional ?problem=<id> seeds a specific design problem (e.g. from a prep plan).
+    problem_id = ws.query_params.get("problem")
+    session = await orchestrator.get_or_create(session_id, problem_id)
     await ws.send_json({"type": "session", "session_id": session_id, "problem": session.problem})
     await _persist(repo.create_session(session_id, session.problem))
 
@@ -62,7 +66,6 @@ async def interview(ws: WebSocket, session_id: str) -> None:
                 audio = base64.b64decode(data.get("data") or "")
                 if not audio:
                     continue
-                await cancel_current()  # barge-in: stop any in-flight reply
                 try:
                     text = (await stt.transcribe(audio, data.get("filename", "audio.webm"))).strip()
                 except Exception:
@@ -72,6 +75,8 @@ async def interview(ws: WebSocket, session_id: str) -> None:
                 if not text:
                     await ws.send_json({"type": "stt_empty"})
                     continue
+                # Only real speech interrupts the in-flight reply (empty/phantom clips must not).
+                await cancel_current()
                 await ws.send_json({"type": "transcript", "text": text})
                 session.history.append({"role": "user", "content": text})
                 await _persist(repo.add_turn(session_id, len(session.history) - 1, "user", text))

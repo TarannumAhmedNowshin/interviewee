@@ -33,10 +33,29 @@ def _client() -> AsyncAzureOpenAI:
     )
 
 
+# Whisper hallucinates on silent/near-silent audio — emojis, music notes, or stock phrases
+# ("thank you", Korean "감사합니다", etc.). Force English decoding and drop the junk.
+_SYMBOL_RE = re.compile(
+    "[\U0001F000-\U0001FAFF\U00002600-\U000027BF\U0001F1E6-\U0001F1FF"
+    "\u2190-\u21FF\u2B00-\u2BFF\u2669-\u266F\uFE0F\u200D]+"
+)
+_HALLUCINATIONS = {"you", "thank you", "thanks for watching", "please subscribe", "bye"}
+
+
+def _clean_transcript(text: str) -> str:
+    cleaned = _SYMBOL_RE.sub("", text or "").strip()
+    if not any(ch.isalnum() for ch in cleaned):
+        return ""  # only emojis/symbols survived → treat as silence
+    key = re.sub(r"[^\w\s]", "", cleaned).strip().lower()
+    return "" if key in _HALLUCINATIONS else cleaned
+
+
 async def transcribe(audio: bytes, filename: str = "audio.webm") -> str:
     """Transcribe an audio clip with the Azure Whisper deployment; returns plain text."""
     result = await _client().audio.transcriptions.create(
         model=settings.whisper_deployment,
         file=(filename, audio),
+        language="en",  # force English; avoids Korean/other-language silence hallucinations
+        temperature=0,
     )
-    return (result.text or "").strip()
+    return _clean_transcript(result.text or "")

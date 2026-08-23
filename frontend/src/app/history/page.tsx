@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import SiteHeader from "../../components/SiteHeader";
 import { listBehavioralSessions } from "../../lib/behavioral";
 import { listMockSessions } from "../../lib/mock";
 
@@ -104,32 +105,25 @@ export default function History() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100">
-      <header className="flex items-center justify-between border-b border-neutral-800 px-6 py-4">
-        <div>
-          <h1 className="text-lg font-semibold tracking-tight">Past interviews</h1>
-          <p className="text-sm text-neutral-500">Every round across all four practice modes</p>
-        </div>
-        <nav className="flex items-center gap-4 text-sm text-neutral-400">
-          <Link href="/arena" className="hover:text-neutral-100">
-            Arena
-          </Link>
-          <Link href="/mock" className="hover:text-neutral-100">
-            Mock
-          </Link>
-          <Link href="/behavioral" className="hover:text-neutral-100">
-            Behavioral
-          </Link>
+    <div className="min-h-screen bg-[#08080a] text-neutral-100">
+      <SiteHeader
+        actions={
           <Link
-            href="/"
-            className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500"
+            href="/design"
+            className="rounded-md bg-neutral-100 px-4 py-1.5 text-sm font-semibold text-neutral-950 transition hover:bg-white"
           >
-            New interview
+            New session
           </Link>
-        </nav>
-      </header>
+        }
+      />
 
-      <div className="mx-auto max-w-3xl px-6 py-8">
+      <div className="mx-auto max-w-4xl px-6 py-12">
+        <div className="mb-8 border-b border-white/8 pb-6">
+          <h1 className="text-2xl font-semibold tracking-tight">Past interviews</h1>
+          <p className="mt-1.5 text-sm text-neutral-500">
+            Every round across all four practice modes.
+          </p>
+        </div>
         {loading ? (
           <p className="text-neutral-500">Loading…</p>
         ) : error ? (
@@ -142,7 +136,7 @@ export default function History() {
               <li key={r.key}>
                 <Link
                   href={r.href}
-                  className="flex items-center justify-between rounded-lg border border-neutral-800 bg-neutral-900 px-5 py-4 transition hover:border-neutral-600"
+                  className="flex items-center justify-between rounded-lg border border-white/8 bg-white/2 px-5 py-4 transition hover:border-white/20 hover:bg-white/4"
                 >
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">

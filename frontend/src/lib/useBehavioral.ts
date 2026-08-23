@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Feedback, Message } from "./useInterview";
+import { clearPersistentSessionId, getPersistentSessionId } from "./session";
 
 export interface BehavioralState {
   stage: string;
@@ -27,9 +28,10 @@ interface ServerMessage {
 const WS_BASE = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000";
 
 // Energy-based VAD tuning (client-side, no deps).
-const VAD_THRESHOLD = 0.015; // RMS above this counts as speech
-const SILENCE_MS = 800; // trailing silence that ends an utterance
-const MIN_SPEECH_MS = 350; // ignore blips shorter than this
+const VAD_THRESHOLD = 0.02; // RMS above this counts as speech (higher = ignores background noise)
+const SILENCE_MS = 1400; // trailing silence that ends an utterance (allows natural thinking pauses)
+const MIN_SPEECH_MS = 500; // ignore clips shorter than this (drops silent blips Whisper hallucinates on)
+const MAX_RECONNECT_ATTEMPTS = 8; // after this many failed retries, give up with a terminal banner
 
 export function useBehavioral() {
   const [connected, setConnected] = useState(false);
@@ -66,7 +68,7 @@ export function useBehavioral() {
 
   useEffect(() => {
     intentionalCloseRef.current = false;
-    if (!sessionIdRef.current) sessionIdRef.current = crypto.randomUUID();
+    if (!sessionIdRef.current) sessionIdRef.current = getPersistentSessionId();
 
     function playNext() {
       const url = audioQueueRef.current.shift();
@@ -127,6 +129,10 @@ export function useBehavioral() {
         evaluatingRef.current = false;
         setEvaluating(false);
         if (intentionalCloseRef.current) return;
+        if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
+          setNotice("Can\u2019t reach the server. Refresh the page to try again.");
+          return;
+        }
         setNotice("Connection lost \u2014 reconnecting\u2026");
         const delay = Math.min(5000, 500 * 2 ** reconnectAttemptsRef.current);
         reconnectAttemptsRef.current += 1;
@@ -196,6 +202,7 @@ export function useBehavioral() {
           evaluatingRef.current = false;
           setEvaluating(false);
           if (msg.report) setFeedback(msg.report);
+          clearPersistentSessionId(); // round is graded — the next visit starts fresh
           break;
         case "feedback_error":
           evaluatingRef.current = false;
@@ -207,7 +214,7 @@ export function useBehavioral() {
           setThinking(false);
           break;
         case "stt_empty":
-          setNotice("Didn't catch any speech \u2014 try again.");
+          // Usually a phantom clip (breath/silence); clear the spinner quietly, no scary banner.
           setThinking(false);
           break;
       }

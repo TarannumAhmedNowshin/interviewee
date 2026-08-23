@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import SiteHeader from "../../components/SiteHeader";
 import {
   listBehavioralQuestions,
   listBehavioralSessions,
@@ -22,31 +23,16 @@ export default function BehavioralLobby() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100">
-      <header className="flex items-center justify-between border-b border-neutral-800 px-6 py-4">
-        <div>
-          <h1 className="text-lg font-semibold tracking-tight">Behavioral Voice Round</h1>
-          <p className="text-sm text-neutral-500">
-            Speak your answer — an AI interviewer probes for a full STAR story and scores it
+    <div className="min-h-screen bg-[#08080a] text-neutral-100">
+      <SiteHeader />
+
+      <main className="mx-auto max-w-4xl px-6 py-12">
+        <div className="mb-8 border-b border-white/8 pb-6">
+          <h1 className="text-2xl font-semibold tracking-tight">Behavioral Voice Round</h1>
+          <p className="mt-1.5 text-sm text-neutral-500">
+            Speak your answer — an AI interviewer probes for a full STAR story and scores it.
           </p>
         </div>
-        <nav className="flex gap-4 text-sm text-neutral-400">
-          <Link href="/" className="hover:text-neutral-100">
-            Interview
-          </Link>
-          <Link href="/arena" className="hover:text-neutral-100">
-            Arena
-          </Link>
-          <Link href="/mock" className="hover:text-neutral-100">
-            Mock
-          </Link>
-          <Link href="/history" className="hover:text-neutral-100">
-            History
-          </Link>
-        </nav>
-      </header>
-
-      <main className="mx-auto max-w-3xl px-6 py-8">
         {error && (
           <p className="text-rose-400">Couldn&apos;t reach the server. Is the backend running?</p>
         )}
@@ -57,7 +43,7 @@ export default function BehavioralLobby() {
             <li key={q.id}>
               <Link
                 href={`/behavioral/${q.id}`}
-                className="flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900/50 px-5 py-4 transition hover:border-neutral-600 hover:bg-neutral-900"
+                className="flex items-center justify-between rounded-xl border border-white/8 bg-white/2 px-5 py-4 transition hover:border-white/20 hover:bg-white/4"
               >
                 <div>
                   <div className="font-medium text-neutral-100">{q.title}</div>
@@ -85,7 +71,7 @@ export default function BehavioralLobby() {
                 <li key={s.id}>
                   <Link
                     href={`/behavioral/replay/${s.id}`}
-                    className="flex items-center justify-between rounded-lg border border-neutral-800 bg-neutral-900 px-5 py-3 transition hover:border-neutral-600"
+                    className="flex items-center justify-between rounded-lg border border-white/8 bg-white/2 px-5 py-3 transition hover:border-white/20 hover:bg-white/4"
                   >
                     <div className="min-w-0">
                       <p className="truncate font-medium text-neutral-100">{s.question_title}</p>

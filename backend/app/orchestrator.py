@@ -1,3 +1,4 @@
+import hashlib
 import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
@@ -10,8 +11,10 @@ from app.interviewer import (
     PROBLEMS,
     SCORING_SYSTEM,
     STAGES,
+    get_design_problem,
 )
 from app.services import llm
+from app.session_store import SessionStore
 
 
 @dataclass
@@ -24,16 +27,28 @@ class Session:
     history: list[dict] = field(default_factory=list)  # {"role", "content"} messages
 
 
-_SESSIONS: dict[str, Session] = {}
+_SESSIONS: SessionStore[Session] = SessionStore()
 
 
-async def get_or_create(session_id: str) -> Session:
-    if session_id not in _SESSIONS:
-        problem = PROBLEMS[hash(session_id) % len(PROBLEMS)]
-        session = Session(id=session_id, problem=problem)
-        await _try_rehydrate(session)
-        _SESSIONS[session_id] = session
-    return _SESSIONS[session_id]
+def _select_problem(session_id: str, problem_id: str | None) -> str:
+    if problem_id:
+        chosen = get_design_problem(problem_id)
+        if chosen:
+            return chosen["prompt"]
+    # sha256, not the built-in hash(): Python salts str hashing per process
+    # (PYTHONHASHSEED), so hash() is NOT stable across restarts. sha256 is.
+    digest = hashlib.sha256(session_id.encode()).hexdigest()
+    return PROBLEMS[int(digest, 16) % len(PROBLEMS)]
+
+
+async def get_or_create(session_id: str, problem_id: str | None = None) -> Session:
+    existing = _SESSIONS.get(session_id)
+    if existing is not None:
+        return existing
+    session = Session(id=session_id, problem=_select_problem(session_id, problem_id))
+    await _try_rehydrate(session)
+    _SESSIONS.set(session_id, session)
+    return session
 
 
 async def _try_rehydrate(session: Session) -> None:
@@ -42,7 +57,7 @@ async def _try_rehydrate(session: Session) -> None:
         data = await repo.get_session(session.id)
     except Exception:
         return
-    if not data or data.get("status") == "ended":
+    if not data or data.get("status") != "active":
         return
     if data.get("problem"):
         session.problem = data["problem"]

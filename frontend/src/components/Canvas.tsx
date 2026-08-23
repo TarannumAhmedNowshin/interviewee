@@ -37,7 +37,7 @@ export default function Canvas({ onDiagram }: Props) {
           files: api.getFiles(),
           mimeType: "image/png",
           exportPadding: 16,
-          getDimensions: (width, height) => {
+          getDimensions: (width: number, height: number) => {
             const scale = Math.min(1, 1024 / Math.max(width, height));
             return { width: width * scale, height: height * scale, scale };
           },

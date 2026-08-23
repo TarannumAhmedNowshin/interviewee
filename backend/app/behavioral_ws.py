@@ -14,6 +14,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app import behavioral_orchestrator as orch
 from app.db import repo
 from app.services import stt, tts
+from app.ws_guard import accept_within_limit
 
 log = logging.getLogger("interview.behavioral_ws")
 router = APIRouter()
@@ -29,7 +30,8 @@ async def _persist(coro) -> None:
 
 @router.websocket("/ws/behavioral/{session_id}")
 async def behavioral(ws: WebSocket, session_id: str) -> None:
-    await ws.accept()
+    if not await accept_within_limit(ws):
+        return
     session = await orch.get_or_create(session_id)
 
     current: asyncio.Task | None = None
@@ -85,7 +87,6 @@ async def behavioral(ws: WebSocket, session_id: str) -> None:
                 audio = base64.b64decode(data.get("data") or "")
                 if not audio:
                     continue
-                await cancel_current()  # barge-in: stop any in-flight reply
                 try:
                     text = (await stt.transcribe(audio, data.get("filename", "audio.webm"))).strip()
                 except Exception:
@@ -95,6 +96,8 @@ async def behavioral(ws: WebSocket, session_id: str) -> None:
                 if not text:
                     await ws.send_json({"type": "stt_empty"})
                     continue
+                # Only real speech interrupts the in-flight reply (empty/phantom clips must not).
+                await cancel_current()
                 await ws.send_json({"type": "transcript", "text": text})
                 session.history.append({"role": "user", "content": text})
                 await _persist(

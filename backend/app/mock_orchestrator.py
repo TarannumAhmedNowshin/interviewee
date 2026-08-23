@@ -19,6 +19,7 @@ from app.mock_interviewer import (
     STAGES,
 )
 from app.services import llm
+from app.session_store import SessionStore
 
 
 @dataclass
@@ -35,15 +36,17 @@ class MockSession:
     history: list[dict] = field(default_factory=list)
 
 
-_SESSIONS: dict[str, MockSession] = {}
+_SESSIONS: SessionStore[MockSession] = SessionStore()
 
 
 async def get_or_create(session_id: str) -> MockSession:
-    if session_id not in _SESSIONS:
-        session = MockSession(id=session_id)
-        await _try_rehydrate(session)
-        _SESSIONS[session_id] = session
-    return _SESSIONS[session_id]
+    existing = _SESSIONS.get(session_id)
+    if existing is not None:
+        return existing
+    session = MockSession(id=session_id)
+    await _try_rehydrate(session)
+    _SESSIONS.set(session_id, session)
+    return session
 
 
 async def _try_rehydrate(session: MockSession) -> None:
@@ -52,7 +55,7 @@ async def _try_rehydrate(session: MockSession) -> None:
         data = await repo.get_mock_session(session.id)
     except Exception:
         return
-    if not data or data.get("status") == "ended":
+    if not data or data.get("status") != "active":
         return
     problem = arena_problems.get(data.get("problem_id") or "")
     if problem:

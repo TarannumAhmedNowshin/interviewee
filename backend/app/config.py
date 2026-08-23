@@ -51,6 +51,11 @@ class Settings(BaseSettings):
     frontend_origin: str = "http://localhost:3000"
     piston_url: str = "http://localhost:2000"
 
+    # rate limiting (Point 4) — per-client caps so a runaway loop can't burn quota.
+    # Set to 0 to disable. Generous by default so normal local use never trips.
+    rate_limit_per_minute: int = 240  # HTTP requests per client IP per minute
+    ws_connections_per_minute: int = 60  # new WebSocket connections per client IP per minute
+
     @property
     def gpt5_configured(self) -> bool:
         return bool(self.azure_gpt5_endpoint and self.azure_gpt5_api_key)

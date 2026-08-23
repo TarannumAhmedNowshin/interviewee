@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { clearPersistentSessionId, getPersistentSessionId } from "./session";
 
 export type Role = "interviewer" | "candidate";
 
@@ -46,11 +47,12 @@ interface ServerMessage {
 const WS_BASE = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000";
 
 // Energy-based VAD tuning (client-side, no deps).
-const VAD_THRESHOLD = 0.015; // RMS above this counts as speech
-const SILENCE_MS = 800; // trailing silence that ends an utterance
-const MIN_SPEECH_MS = 350; // ignore blips shorter than this
+const VAD_THRESHOLD = 0.02; // RMS above this counts as speech (higher = ignores background noise)
+const SILENCE_MS = 1400; // trailing silence that ends an utterance (allows natural thinking pauses)
+const MIN_SPEECH_MS = 500; // ignore clips shorter than this (drops silent blips Whisper hallucinates on)
+const MAX_RECONNECT_ATTEMPTS = 8; // after this many failed retries, give up with a terminal banner
 
-export function useInterview() {
+export function useInterview(problemId?: string) {
   const [connected, setConnected] = useState(false);
   const [problem, setProblem] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -63,10 +65,13 @@ export function useInterview() {
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [evaluating, setEvaluating] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [diagramSyncedAt, setDiagramSyncedAt] = useState<number | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const streamingIdRef = useRef<string | null>(null);
   const sessionIdRef = useRef<string>("");
+  const problemIdRef = useRef<string | undefined>(problemId);
+  problemIdRef.current = problemId;
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const intentionalCloseRef = useRef(false);
@@ -86,7 +91,7 @@ export function useInterview() {
 
   useEffect(() => {
     intentionalCloseRef.current = false;
-    if (!sessionIdRef.current) sessionIdRef.current = crypto.randomUUID();
+    if (!sessionIdRef.current) sessionIdRef.current = getPersistentSessionId();
 
     function playNext() {
       const url = audioQueueRef.current.shift();
@@ -132,7 +137,10 @@ export function useInterview() {
     stopAudioRef.current = stopAudio;
 
     function connect() {
-      const ws = new WebSocket(`${WS_BASE}/ws/interview/${sessionIdRef.current}`);
+      const q = problemIdRef.current
+        ? `?problem=${encodeURIComponent(problemIdRef.current)}`
+        : "";
+      const ws = new WebSocket(`${WS_BASE}/ws/interview/${sessionIdRef.current}${q}`);
       wsRef.current = ws;
       ws.onmessage = handleMessage;
       ws.onopen = () => {
@@ -147,6 +155,10 @@ export function useInterview() {
         evaluatingRef.current = false;
         setEvaluating(false);
         if (intentionalCloseRef.current) return;
+        if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
+          setNotice("Can\u2019t reach the server. Refresh the page to try again.");
+          return;
+        }
         setNotice("Connection lost \u2014 reconnecting\u2026");
         const delay = Math.min(5000, 500 * 2 ** reconnectAttemptsRef.current);
         reconnectAttemptsRef.current += 1;
@@ -219,6 +231,7 @@ export function useInterview() {
           evaluatingRef.current = false;
           setEvaluating(false);
           if (msg.report) setFeedback(msg.report);
+          clearPersistentSessionId(); // round is graded — the next visit starts fresh
           break;
         case "feedback_error":
           evaluatingRef.current = false;
@@ -230,7 +243,7 @@ export function useInterview() {
           setThinking(false);
           break;
         case "stt_empty":
-          setNotice("Didn't catch any speech \u2014 try again.");
+          // Usually a phantom clip (breath/silence); clear the spinner quietly, no scary banner.
           setThinking(false);
           break;
       }
@@ -295,7 +308,7 @@ export function useInterview() {
 
   const sendDiagram = useCallback(
     (base64: string) => {
-      send({ type: "diagram", data: base64 });
+      if (send({ type: "diagram", data: base64 })) setDiagramSyncedAt(Date.now());
     },
     [send],
   );
@@ -430,6 +443,7 @@ export function useInterview() {
     feedback,
     evaluating,
     notice,
+    diagramSyncedAt,
     start,
     sendUser,
     setVoice,
